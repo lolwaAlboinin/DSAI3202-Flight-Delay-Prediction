@@ -1,0 +1,5 @@
+# Use a Databricks Runtime containing Spark/PySpark and Unity Catalog support.
+# These are used by the exploratory notebooks; installed in many Databricks runtimes.
+matplotlib
+pandas
+# PySpark and dbutils are supplied by the Databricks runtime, not installed here.

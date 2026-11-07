@@ -1,0 +1,15 @@
+# Keep source data, exports, credentials and local files out of Git
+*.csv
+*.parquet
+*.zip
+*.dbc
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+__pycache__/
+.ipynb_checkpoints/
+.DS_Store
+.vscode/
+!.gitkeep
