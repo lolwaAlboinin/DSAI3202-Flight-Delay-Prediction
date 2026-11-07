@@ -46,7 +46,7 @@ Azure Databricks Job: Flight_Delay_Phase1_Production
 
 **Source schema and assumptions:** BTS source has ~110 columns; project checks year, month, flight date, airline, airports, scheduled departure time, cancellation/diversion, `ArrDelay`, and `ArrDel15`. Candidate duplicate key: `(FlightDate, Reporting_Airline, Flight_Number_Reporting_Airline, Origin, Dest, CRSDepTime)`; duplicate checks on the 2025 raw input returned zero extra rows. Scheduled departure time 2400 is normalized to hour 0. `ArrDel15` is the supervised label, not a predictor. Cancelled/diverted flights and invalid/unknown outcomes are rejected, so results refer only to the accepted-flight population.
 
-See [`config/environment.md`](config/environment.md) for permissions and exact Azure objects. The model-ready column definitions below and catalog lineage screenshots provide initial lineage/feature documentation; expand this if the rubric requires a separate data dictionary.
+See [`config/environment.md`](config/environment.md) for permissions and exact Azure objects. The complete [feature data dictionary](docs/feature_data_dictionary.md) documents definitions, output types, source fields, prediction-time availability, leakage risks and raw-to-curated lineage.
 
 ## Run the pipeline
 
@@ -79,11 +79,11 @@ See [`config/environment.md`](config/environment.md) for permissions and exact A
 
 **Rejection analysis:** Primary categories sum to 122,135 rejected flights: cancelled 102,876 (84.23%), diverted 19,258 (15.77%) and missing arrival delay 1 (<0.01%). The overlapping-reasons view may count a record more than once; the primary categories assign one reason per rejected record. These outcomes are intentionally excluded from the valid-arrival population, which can create selection bias.
 
-**EDA:** Overall delayed share 22.31%. Airline delay proportions differ across the busiest carriers; scheduled departure hour also shows meaningful differences (e.g., earlier departure hours were lower risk in the observed data). These are correlations in the accepted population, not causal findings; cancelled/diverted cases are excluded and may introduce selection bias.
+**EDA:** Overall delayed share 22.31%. Airline delay proportions differ across the busiest carriers; scheduled departure hour also shows meaningful differences. These are **observed associations, not causal findings or calculated correlation coefficients**; cancelled/diverted flights are excluded and may introduce selection bias. See [full EDA findings and limitations](docs/eda_findings.md) for distribution, chart interpretations, outlier scope and implications for modeling.
 
 **Model-ready columns (13 total):** `FlightDate` (date, scheduling date); `Year` (int, year); `Month` (int, month); `Reporting_Airline` (string, known airline); `Origin` (string, origin airport); `Dest` (string, destination airport); `CRSDepTime` (int, scheduled departure HHMM); `DepHour` (int, derived scheduled hour); `DayOfWeek` (int, day number); `IsWeekend` (int, derived weekend flag); `Quarter` (int, derived quarter); `Route` (string, origin-destination pair); `ArrDel15` (int, target **known only after flight arrival**).
 
-All twelve non-target fields are derived from scheduled or identifying flight attributes and are intended to be available before departure. `ArrDelay` and actual departure/arrival outcome fields are excluded to prevent leakage. The flight date may be used to create temporal train/validation/test splits rather than as a raw model predictor. The feature set has not been encoded or trained yet.
+See the [feature data dictionary](docs/feature_data_dictionary.md) for a per-column schema, sources and prediction-time availability. All twelve non-target fields are derived from scheduled or identifying flight attributes and are intended to be available before departure. `ArrDelay` and actual departure/arrival outcome fields are excluded to prevent leakage. The flight date may be used to create temporal train/validation/test splits rather than as a raw model predictor. The feature set has not been encoded or trained yet.
 
 ## Reproducibility and evidence
 
