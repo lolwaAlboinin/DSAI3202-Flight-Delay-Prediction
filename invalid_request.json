@@ -1,0 +1,12 @@
+{
+  "data": [{
+    "Reporting_Airline": "AA",
+    "Dest": "PHL",
+    "Month": 8,
+    "CRSDepTime": 1610,
+    "DepHour": 16,
+    "DayOfWeek": 7,
+    "IsWeekend": 1,
+    "Quarter": 3
+  }]
+}

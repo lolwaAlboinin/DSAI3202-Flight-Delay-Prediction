@@ -1,0 +1,8 @@
+$schema: https://azuremlschemas.azureedge.net/latest/managedOnlineEndpoint.schema.json
+name: flight-delay-60106354
+description: DSAI3202 Phase 2 Random Forest delay predictions with validated threshold 0.55
+auth_mode: key
+public_network_access: enabled
+tags:
+  course: DSAI3202
+  phase: "2"

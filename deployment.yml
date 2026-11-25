@@ -1,0 +1,17 @@
+$schema: https://azuremlschemas.azureedge.net/latest/managedOnlineDeployment.schema.json
+name: blue
+endpoint_name: flight-delay-60106354
+model: azureml:flight-delay-random-forest:1
+code_configuration:
+  code: ./src
+  scoring_script: score.py
+environment: azureml:flight-delay-inference-env:2
+instance_type: Standard_DS3_v2
+instance_count: 1
+request_settings:
+  request_timeout_ms: 90000
+liveness_probe:
+  initial_delay: 600
+  period: 10
+  timeout: 2
+  failure_threshold: 30
