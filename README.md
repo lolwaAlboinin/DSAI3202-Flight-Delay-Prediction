@@ -1,15 +1,15 @@
-# Flight Delay Prediction — DSAI3202 Phase 1
+# Flight Delay Prediction — DSAI3202 (Phases 1 and 2)
 
-Cloud data foundation for predicting whether a US domestic flight arrives at least **15 minutes late**, using 2025 US Bureau of Transportation Statistics (BTS) on-time reporting data. This repository contains the reproducible PySpark notebook logic and setup notes; the large data remains in Azure Data Lake Storage Gen2.
+End-to-end cloud computing project predicting whether a US domestic flight arrives at least **15 minutes late**, using 2025 US Bureau of Transportation Statistics (BTS) on-time reporting data. **Phase 1** covers Azure data ingestion, quality checks, feature engineering and a repeatable Databricks production pipeline. **Phase 2** adds chronological data splitting, Random Forest training, final holdout evaluation and a working Azure Machine Learning managed online endpoint. The large dataset remains in Azure Data Lake Storage Gen2.
 
-> **Status (November 7, 2026):** An independent production Databricks ETL job succeeded. Nine notebooks, ingestion script, source manifest and selected execution screenshots are packaged; see [`docs/submission_checklist.md`](docs/submission_checklist.md) for evidence and rubric items not yet completed. Do not treat the checked pipeline as evidence of model training.
+> **Status (November 25, 2026):** Phase 1 ETL was successfully verified. Phase 2 trained and evaluated a Random Forest model, registered it in Azure ML and verified the online deployment (`blue`, 100% traffic), valid/invalid requests and an exact offline–online prediction match for one example. The repository contains 14 notebooks, deployment configuration and selected evidence. See [`docs/submission_checklist.md`](docs/submission_checklist.md) for the original Phase 1 checklist; check the current Phase 2 submission rubric separately.
 
 ## Project and hypothesis
 
 **Problem:** Flight arrival delays affect passenger planning and airline operations.  
 **Task:** Binary classification of `ArrDel15`: **1** if actual arrival delay is at least 15 minutes, **0** otherwise, on flights with known valid arrival outcomes.  
 **Hypothesis (from project proposal):** A Random Forest classifier using airline, origin, destination, scheduled departure time, month and day of week will have better **delayed-class F1-score** than a majority-class baseline on later 2025 flights.  
-**Baseline/experiment plan:** Train January–August, validate September–October, and test November–December 2025; compare delayed-class F1, accuracy and confusion matrix to a majority-class baseline. **No model training is reported in Phase 1.**  
+**Baseline/experiment:** The planned chronological split was implemented in Phase 2: train January–August, validate September–October and test November–December 2025. Majority-class baseline and Random Forest predictions were evaluated on later flights. The delayed-class F1 objective is assessed on held-out data below.  
 **Implementation refinement:** The original hypothesis proposed Azure Data Factory; the implemented Phase 1 automation uses an Azure Databricks Job. Confirm/record this refinement with the instructor if approval is required.
 
 ## Dataset and architecture
@@ -83,11 +83,71 @@ See [`config/environment.md`](config/environment.md) for permissions and exact A
 
 **Model-ready columns (13 total):** `FlightDate` (date, scheduling date); `Year` (int, year); `Month` (int, month); `Reporting_Airline` (string, known airline); `Origin` (string, origin airport); `Dest` (string, destination airport); `CRSDepTime` (int, scheduled departure HHMM); `DepHour` (int, derived scheduled hour); `DayOfWeek` (int, day number); `IsWeekend` (int, derived weekend flag); `Quarter` (int, derived quarter); `Route` (string, origin-destination pair); `ArrDel15` (int, target **known only after flight arrival**).
 
-See the [feature data dictionary](docs/feature_data_dictionary.md) for a per-column schema, sources and prediction-time availability. All twelve non-target fields are derived from scheduled or identifying flight attributes and are intended to be available before departure. `ArrDelay` and actual departure/arrival outcome fields are excluded to prevent leakage. The flight date may be used to create temporal train/validation/test splits rather than as a raw model predictor. The feature set has not been encoded or trained yet.
+See the [feature data dictionary](docs/feature_data_dictionary.md) for a per-column schema, sources and prediction-time availability. All twelve non-target fields are derived from scheduled or identifying flight attributes and are intended to be available before departure. `ArrDelay` and actual departure/arrival outcome fields are excluded to prevent leakage. The flight date may be used to create temporal train/validation/test splits rather than as a raw model predictor. For Phase 2, nine predeparture predictors were selected, and the training notebook fitted the model and preprocessing pipeline.
+
+## Phase 2 — model training and evaluation
+
+Phase 2 uses the curated 2025 flight data from Phase 1 and preserves a versioned, chronological training snapshot in ADLS Gen2. Splitting by flight date avoids evaluating on earlier records than those used for training.
+
+| Split | Period | Accepted flight records |
+| --- | --- | ---: |
+| Training | January–August 2025 | 4,592,366 |
+| Validation | September–October 2025 | 1,159,898 |
+| Test | November–December 2025 | 1,127,220 |
+
+**Training:** A scikit-learn Random Forest and its preprocessing pipeline were fitted using a deterministic training sample of **91,931** records, with a deterministic validation sample of **57,588** records. Training on samples was a practical compute choice; it is not the same as fitting on all 4.59 million training records. The decision threshold **0.55** was selected using validation data and kept unchanged for the held-out test and deployed endpoint.
+
+**Nine inference features:** `Reporting_Airline`, `Origin`, `Dest`, `Month`, `CRSDepTime`, `DepHour`, `DayOfWeek`, `IsWeekend`, `Quarter`. The label `ArrDel15` and post-flight outcome information are excluded from the predictors.
+
+**Final holdout evaluation:** A deterministic 5% sample of November–December flights (approximately 56,081 observations) was used for the reported final comparison.
+
+| Metric | Majority-class baseline | Random Forest (threshold 0.55) |
+| --- | ---: | ---: |
+| Accuracy | 0.7624 | 0.6042 |
+| Balanced accuracy | 0.5000 | 0.5842 |
+| Delayed-class precision | Not reported here | 0.3106 |
+| Delayed-class recall | Not reported here | 0.5460 |
+| Delayed-class F1 | 0 for a zero-positive-prediction baseline | 0.3960 |
+| ROC-AUC | Not reported here | 0.6150 |
+
+The Random Forest improves recognition of delayed flights and balanced accuracy relative to predicting every flight as on time, **but its overall accuracy is lower** and it produces many false alarms. The recorded final error analysis reports **16,835 false positives** and **6,138 false negatives** on the held-out sample. The results should not be described as uniformly superior to the baseline. The evaluation covers accepted flights only; excluded cancellations/diversions and year-to-year changes limit generalization.
+
+**Notebooks:** [`10_prepare_training_data`](notebooks/10_prepare_training_data.ipynb), [`11_baseline_model`](notebooks/11_baseline_model.ipynb), [`12_train_random_forest`](notebooks/12_train_random_forest.ipynb), [`13_final_model_evaluation`](notebooks/13_final_model_evaluation.ipynb), and [`14_prepare_model_deployment`](notebooks/14_prepare_model_deployment.ipynb).
+
+## Phase 2 — Azure Machine Learning deployment
+
+The trained Random Forest was registered in Azure ML as **`flight-delay-random-forest:1`**. A managed online endpoint named **`flight-delay-60106354`** uses the `blue` deployment, environment **`flight-delay-inference-env:2`** and one `Standard_DS3_v2` compute instance. At verification, the endpoint and deployment reported **Succeeded** and **100% of live traffic** was allocated to `blue`.
+
+The deployment accepts JSON in the form `{"data": [{...nine features...}]}`. Its `score.py` validates the nine fields, loads the registered model and returns a predicted class, delay probability, threshold and model version.
+
+**Verified online example:** `AA` from `RDU` to `PHL`, month 8, scheduled departure `1610`, `DepHour=16`, `DayOfWeek=7`, `IsWeekend=1`, `Quarter=3` returned **class 1 (delayed)** and probability **`0.606826418671098`** with threshold **0.55**. The same example evaluated from the saved model in Databricks returned the same probability and class, with an observed difference of **0.0**. This verifies **one input case**, not every possible flight.
+
+**Input validation:** An intentionally invalid request missing `Origin` returns a structured application-level `InvalidInput` message identifying the missing field. This implementation returns the error object in a normal response; it does **not** claim HTTP 400 status handling.
+
+**Observed latency:** Five sequential requests invoked through Azure Cloud Shell yielded **4558.60, 5562.74, 4215.36, 4815.99 and 4191.25 ms**; average **4668.79 ms** (approximately **4.67 s**). These are **client-observed Azure CLI invocation times**, including command startup, authentication/network and service processing, **not pure model inference latency**.
+
+Deployment source and usage instructions: [`azure_ml_deployment/`](azure_ml_deployment/). The environment and registered model are Azure ML assets referenced by version; the trained model file is **not committed** to this repository. Endpoint access requires authorized Azure access and may incur ongoing compute charges.
+
+## Project repository structure and evidence
+
+```text
+notebooks/                  01–09 Phase 1; 10–14 Phase 2
+azure_ml_deployment/        endpoint/deployment YAML, sample requests, src/score.py
+config/                     Phase 1 environment and job setup
+scripts/                    Ingestion script
+data_manifest/              Source receipt/manifest
+docs/                       Phase 1 documentation and checklist
+evidence/                   Phase 1 screenshots
+evidence/phase2/            Phase 2 training, evaluation and consistency screenshots
+```
+
+**Key Phase 2 evidence:** [`54_phase2_data_loading.png`](evidence/phase2/54_phase2_data_loading.png), [`55_phase2_data_split.png`](evidence/phase2/55_phase2_data_split.png), [`58_baseline_validation.png`](evidence/phase2/58_baseline_validation.png), [`60_random_forest_validation.png`](evidence/phase2/60_random_forest_validation.png), [`64_final_holdout_comparison.png`](evidence/phase2/64_final_holdout_comparison.png), [`65_final_holdout_error_analysis.png`](evidence/phase2/65_final_holdout_error_analysis.png), and [`70_offline_online_consistency.png`](evidence/phase2/70_offline_online_consistency.png). A dedicated endpoint-latency screenshot was not confirmed in the latest repository screenshot, though measured CLI output was recorded during testing.
+
+**Reproducing Phase 2:** Access to the actual Databricks workspace, feature tables, ADLS snapshot, MLflow model artifact and Azure ML workspace is required. The notebooks and configurations document the workflow but the repository alone, without these cloud assets, is not a standalone one-click deployment. Do not run overwrite/redeployment commands on existing resources without checking their impact and cost.
 
 ## Reproducibility and evidence
 
-The project includes **nine** Databricks notebooks in `notebooks/`, ingestion source in `scripts/`, an actual source manifest in `data_manifest/`, and selected successful-execution screenshots in `evidence/`. Notebook outputs are intentionally removed from source copies; the original workspace contains successful run outputs and screenshots give an auditable subset of the results. The external tables initially used v1; production outputs and matching v2 catalog tables were later registered. For data quality, inspect notebooks `08` and `09` as well as `07`. No 2025 raw CSV/ZIP datasets or Azure secrets are committed.
+The project includes **14** Databricks notebooks (nine Phase 1 and five Phase 2) in `notebooks/`, ingestion source in `scripts/`, an actual source manifest in `data_manifest/`, and selected successful-execution screenshots in `evidence/`. The original Databricks workspace contains run outputs; repository screenshots give an auditable subset of the actual results. The external tables initially used v1; production outputs and matching v2 catalog tables were later registered. Phase 2 model and deployment evidence is linked above. For data quality, inspect notebooks `08` and `09` as well as `07`. No 2025 raw CSV/ZIP datasets or Azure secrets are committed.
 
 ## Resource use and contributions
 
@@ -95,7 +155,7 @@ The project includes **nine** Databricks notebooks in `notebooks/`, ingestion so
 
 **Cleanup:** Stop/terminate project compute when not needed (subject to course cluster policy), remove unused temporary runs/test resources after evidence capture, and review ADLS storage firewall/access settings with the instructor. Do **not** delete preserved raw `v1` data, submitted v2 results or catalog tables without authorization.
 
-**Contributions:** Individual project. Student performed dataset selection/download, validation, Azure upload, Databricks execution, output verification and evidence capture. ChatGPT assisted with planning, explanations, code drafting and README organization; manual results and approval remain the student's responsibility. Original BTS flight data and methodology belong to their respective publishers; adapt code from course labs only with appropriate attribution if reused.
+**Contributions:** Individual project. Student performed dataset selection/download, validation, Azure upload, Databricks execution, model training/evaluation, Azure ML endpoint testing, output verification and evidence capture. ChatGPT assisted with planning, explanations, code drafting and README organization; manual results and approval remain the student's responsibility. Original BTS flight data and methodology belong to their respective publishers; adapt code from course labs only with appropriate attribution if reused.
 
 ## AI use
 
@@ -104,4 +164,5 @@ The project includes **nine** Databricks notebooks in `notebooks/`, ingestion so
 | ChatGPT | Help choose a cloud project and write the flight-delay hypothesis | Proposed BTS flight data, prediction question, evaluation plan | Selected 2025 data, validated source size and revised experiment to use temporal splits and delayed-class F1 |
 | ChatGPT | Help create ingestion, quality, feature engineering and production Databricks code | Drafted PySpark notebook logic and step-by-step Azure instructions | Executed notebooks/jobs on real data, checked actual row counts and errors, handled permissions and saved evidence |
 | ChatGPT | Check notebooks and prepare project documentation | Suggested cleanup, v1/v2 catalog clarification, README structure | Removed sample-only EDA/feature cells, verified real 2025 outputs, added separate-input quality and real rejection-reason notebooks, and reviewed final README and evidence |
+| ChatGPT | Assist with Phase 2 modeling, deployment troubleshooting and documentation | Suggested notebook code, Azure ML YAML/scoring script, dependency fixes and test commands | Ran tests in Databricks and Azure, checked actual scores/statuses, corrected environment and invalid-input handling, and verified offline–online consistency |
 
