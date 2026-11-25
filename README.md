@@ -116,6 +116,9 @@ The Random Forest improves recognition of delayed flights and balanced accuracy 
 
 ## Phase 2 — Azure Machine Learning deployment
 
+**Model traceability:** The deployed model is `azureml:flight-delay-random-forest:1`, using inference environment `azureml:flight-delay-inference-env:2`. The model was trained in [`12_train_random_forest`](notebooks/12_train_random_forest.ipynb) using a fitted preprocessing pipeline and deterministic training sample, then evaluated in [`13_final_model_evaluation`](notebooks/13_final_model_evaluation.ipynb). The source is the Phase 1 curated 2025 feature dataset, with the Phase 2 versioned snapshot `phase2_20251118_v1` in ADLS Gen2. The chronological split and snapshot creation are documented in [`10_prepare_training_data`](notebooks/10_prepare_training_data.ipynb). The exact Databricks/MLflow training run ID and corresponding source commit are **not yet confirmed**; they must be copied from the original training run and GitHub history rather than guessed. The registered model version and the source code in this repository should be kept unchanged for assessment.
+
+
 The trained Random Forest was registered in Azure ML as **`flight-delay-random-forest:1`**. A managed online endpoint named **`flight-delay-60106354`** uses the `blue` deployment, environment **`flight-delay-inference-env:2`** and one `Standard_DS3_v2` compute instance. At verification, the endpoint and deployment reported **Succeeded** and **100% of live traffic** was allocated to `blue`.
 
 The deployment accepts JSON in the form `{"data": [{...nine features...}]}`. Its `score.py` validates the nine fields, loads the registered model and returns a predicted class, delay probability, threshold and model version.
@@ -126,7 +129,15 @@ The deployment accepts JSON in the form `{"data": [{...nine features...}]}`. Its
 
 **Observed latency:** Five sequential requests invoked through Azure Cloud Shell yielded **4558.60, 5562.74, 4215.36, 4815.99 and 4191.25 ms**; average **4668.79 ms** (approximately **4.67 s**). These are **client-observed Azure CLI invocation times**, including command startup, authentication/network and service processing, **not pure model inference latency**.
 
+**Performance reference target:** A **6-second client-observed request time** is used here as a retrospective reference target, added after the five-request test (not a target claimed to have been selected in advance). The five measured requests ranged from **4.19 to 5.56 seconds**, so all five were below this reference value. A larger, repeated test under controlled load is needed to establish reliable p95 latency and throughput. This reference is for the **Cloud Shell CLI round trip**, not for model-only scoring.
+
 Deployment source and usage instructions: [`azure_ml_deployment/`](azure_ml_deployment/). The environment and registered model are Azure ML assets referenced by version; the trained model file is **not committed** to this repository. Endpoint access requires authorized Azure access and may incur ongoing compute charges.
+
+## Final presentation
+
+**PowerPoint presentation:** [DSAI3202 Flight Delay Final Presentation](presentation/DSAI3202_Flight_Delay_Final_Presentation.pptx). This file explains the architecture, modeling choices, baseline comparison, error analysis, deployment, performance and live demonstration. **Note:** This link expects the presentation to be committed under `presentation/` with the exact filename shown; if the uploaded filename or folder is different, update this relative link accordingly.
+
+**Live assessment:** The Azure ML managed endpoint must be accessible during the assigned D2L assessment and presentation slot on **December 1 or 3, 2026**. The instructor may supply a new valid JSON request that follows the nine-feature input contract. The endpoint may be removed between assessment windows to control cost and redeployed from the saved YAML, registered model, and inference environment; model/data assets must remain available. Verify operational readiness and authorized access before the live demonstration.
 
 ## Project repository structure and evidence
 
@@ -139,6 +150,7 @@ data_manifest/              Source receipt/manifest
 docs/                       Phase 1 documentation and checklist
 evidence/                   Phase 1 screenshots
 evidence/phase2/            Phase 2 training, evaluation and consistency screenshots
+presentation/               Final project PowerPoint presentation
 ```
 
 **Key Phase 2 evidence:** [`54_phase2_data_loading.png`](evidence/phase2/54_phase2_data_loading.png), [`55_phase2_data_split.png`](evidence/phase2/55_phase2_data_split.png), [`58_baseline_validation.png`](evidence/phase2/58_baseline_validation.png), [`60_random_forest_validation.png`](evidence/phase2/60_random_forest_validation.png), [`64_final_holdout_comparison.png`](evidence/phase2/64_final_holdout_comparison.png), [`65_final_holdout_error_analysis.png`](evidence/phase2/65_final_holdout_error_analysis.png), and [`70_offline_online_consistency.png`](evidence/phase2/70_offline_online_consistency.png). A dedicated endpoint-latency screenshot was not confirmed in the latest repository screenshot, though measured CLI output was recorded during testing.
